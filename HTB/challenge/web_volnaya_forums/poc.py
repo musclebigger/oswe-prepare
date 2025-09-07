@@ -7,6 +7,7 @@ if len(sys.argv) != 2:
     sys.exit(1)
 
 hostURL = 'http://' + sys.argv[1]
+#注意这里的用户名每一次发送的时候可能需要手动改一下，如果一次拿不到flag
 userName = 'raywhawx%d' % random.randint(1111,9999) # new username
 userPwd = 'raywhawx%d' % random.randint(1111,9999) # new password
   
