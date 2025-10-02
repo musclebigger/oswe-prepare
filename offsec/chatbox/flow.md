@@ -14,7 +14,7 @@
 项目中关键的业务接口，不包含静态资源和状态检查接口，以及用于规范结构的函数
 ### auth
 - /token：管理员和普通用户token发放jwt，jwt包含admin,username,role，函数包括：
-    - authenticate_user：使用参数化sql请求函数验证用户登录信息,如果用户名是admin的登陆成功的jwt，会单独处理pyotp.HOTP，加双因素验证，普通用户不会
+    - authenticate_user：使用参数化sql请求函数验证用户登录信息,如果用户名是admin的登陆成功的jwt，会单独处理pyotp.HOTP，加双因素验证，普通用户不会，但是2fofa的计数器是固定值有种子就会爆破
     - create_access_token： token创建函数, 使用的jwt的secret被硬编码到setting.py里
 ## groups
 - /group/create/：用户创建组，函数包括：
@@ -24,7 +24,7 @@
 - /group/{group_id}/members：查看成员
     - group_membership_check ： group_id=group_id,db=db,user=current_user均参数化
     - group_members_by_id： 同上
-- /group/join：用户加入组
+- /group/join：用户加入组，管理员和普通用户都可以随意加入组
     - get_group_by_address：参数化请求
     - group_membership_check: 同上
     - join_member_to_group：同上
@@ -64,7 +64,10 @@
 3. JWT secret 硬编码, 但是生产环境通过穿越看seed的值和debug环境不一样
 4. 路径穿越：/api/attachments可以通过路径穿越，但是读取文件有限制
 5. token通过get参数传输
-6. cookie的httponly和secure都没有
+6. cookie的httponly和secure都没有，但是samesite设置strict，cookie出不了域
+7. 不安全的权限控制：管理员加入的组和普通用户加入组没有权限边界，任意用户可以加入管理员所属组
+8. 双因素认证绕过：双因素验证码为固定值，当前种子值计算为529175
+9. 请求头和跨域没有限制
 # 攻击链
-路径穿越
+创建任意用户 -> 加入admin组给管理员发xss -> 发送xss 获取管理员cookie -> 登录管理员获取第一个flag -> 反序列化反弹shell -> 获取proof.txt
 
