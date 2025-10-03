@@ -1,6 +1,6 @@
 # oswe-prepare
 ## 总结
-1. 脚本request最好挂代理从burp的8080走，用连接池更方便 --来自于interstella
+1. 脚本request最好挂代理从burp的8080走，用连接池更方便，很适合debug --来自于interstella
 ## 用法标签
 - web_volnaya_forums
 xss钓鱼，注册，登录，webhook
