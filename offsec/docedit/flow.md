@@ -40,12 +40,12 @@
     - AuthToken：generate属性，创建token使用Math.random() 
   - /register：firstName，lastName，email，password1，password2，注册需要的参数，email作为用户是否存在的判断,参数化了
   - /profile/update：跟注册一样，更新账号密码，用的userController
+    - searchByEmail: 存在sql拼接而不是参数化输入
   - /document或者/d： 创建doc，参数化创建，但是title和content后端没有xss校验
   - /document/:docid或者/d/:docid：查看指定doc渲染到pug模板中，走的doc的controller，local校验用户身份
   - /document/tag/:docid：修改tag
 - Websocket路由
   - updateProfile：更新用户信息，使用usercontroller，输入没有过滤，参数有data.firstName, data.lastName, data.email,data.password1,data.password2
-    - update：该方法接受除了上面四个参数外，还有一个isadmin参数，控制admin授权，如果参数输入中包含了isadmin就变成了admin
 - 管理员用户
   - /server：走的plugin controller
     - pluginController.js: 使用了eval函数执行location变量，且该变量用户可控制，虽然设置了黑名单blacklist = ["require", "child_process"]但是可以被绕过
@@ -56,5 +56,6 @@
 3. cookie：虽然有js的控制，但是没有失效时间控制
 4. 储存型XSS： doc可以写入js代码，toggle会弹xss
 5. 模板注入：server接口的plugin，用户可控制的location参数执行代码
-6. 原型链污染：updateProfile的update可以使用"__proto__": {"admin": true}，注入原型导致权限提升
+6. SQL注入：更新email的profil时，使用字符串拼接，可能导致sql注入
 # 攻击链
+注册用户 -> 进入用户获取第一个flag -> 更新profile的email使用盲注获取管理员token -> 进入管理员用户 -> 通过/server进行模板注入执行命令
