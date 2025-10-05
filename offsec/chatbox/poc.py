@@ -1,9 +1,9 @@
 import requests
-import asyncio
+import asyncio # 异步等待
 from bs4 import BeautifulSoup
 import sys
 import websockets
-from aiohttp import web
+from aiohttp import web #钓鱼服务器
 import urllib.parse
 
 def create_user(base_url, username, password):

