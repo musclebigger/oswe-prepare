@@ -1,6 +1,7 @@
-selenium
-Flask
+selenium==3.141.0
+Flask==2.2.5
 pyjwt
 requests
 pycryptodome
 cryptography
+urllib3<2
